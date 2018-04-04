@@ -32,6 +32,7 @@ import org.junit.Test;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.stream.Collectors;
 
@@ -371,13 +372,14 @@ public class ElasticsearchTest {
     // all we need to test here is that we can receive and send version
 
     String indexName = "test_using_versions";
+    String typeName = "book";
 
     // Insert document
     Book book = new Book("b");
-    Source.single(IncomingMessage.create("1", book, 5))
+    Source.single(IncomingMessage.create("1", book))
             .via(ElasticsearchFlow.create(
                     indexName,
-                    "book",
+                    typeName,
                     new ElasticsearchSinkSettings().withBufferSize(5).withMaxRetry(0),
                     client,
                     new ObjectMapper()))
@@ -386,19 +388,29 @@ public class ElasticsearchTest {
     flush(indexName);
 
     // Search document and assert it having version 1
-    ElasticsearchSource.<Book>typed(
-            indexName,
-            "book",
-            "{\"match_all\": {}}",
-            new ElasticsearchSourceSettings().withIncludeDocumentVersion(true),
-            client,
-            Book.class)
-            .map(o -> {
-              assertEquals(5L, o.version().get());
-              return o;
-            })
-            .runWith(Sink.ignore(), materializer)
-            .toCompletableFuture().get();
+    OutgoingMessage<Book> message = ElasticsearchSource.<Book>typed(
+      indexName,
+      typeName,
+      "{\"match_all\": {}}",
+      new ElasticsearchSourceSettings().withIncludeDocumentVersion(true),
+      client,
+      Book.class)
+      .runWith(Sink.head(), materializer)
+      .toCompletableFuture().get();
+
+    assertEquals(1L, message.version().get());
+
+    flush(indexName);
+
+    // Update document to version 2
+    Source.single(IncomingMessage.create("1", book, 1L))
+      .via(ElasticsearchFlow.create(
+        indexName,
+        typeName,
+        new ElasticsearchSinkSettings().withBufferSize(5).withMaxRetry(0),
+        client,
+        new ObjectMapper()))
+      .runWith(Sink.seq(), materializer).toCompletableFuture().get();
 
     flush(indexName);
 
@@ -407,13 +419,126 @@ public class ElasticsearchTest {
     boolean success = Source.single(IncomingMessage.create("1", book, oldVersion))
             .via(ElasticsearchFlow.create(
                     indexName,
-                    "book",
+                    typeName,
                     new ElasticsearchSinkSettings().withBufferSize(5).withMaxRetry(0),
                     client,
                     new ObjectMapper()))
             .runWith(Sink.seq(), materializer).toCompletableFuture().get().get(0).get(0).success();
 
     assertEquals(false, success);
+  }
+
+  @Test
+  public void testUsingVersionType() throws Exception {
+    String indexName = "book-test-version-type";
+    String typeName = "book";
+
+    Book book = new Book("A sample title");
+    String docId = "1";
+    long externalVersion = 5;
+
+    // Insert new document using external version
+    Source.single(IncomingMessage.create("1", book, externalVersion))
+      .via(ElasticsearchFlow.create(
+        indexName,
+        typeName,
+        new ElasticsearchSinkSettings().withBufferSize(5).withMaxRetry(0).withVersionType("external"),
+        client,
+        new ObjectMapper()))
+      .runWith(Sink.seq(), materializer).toCompletableFuture().get();
+
+    flush(indexName);
+
+    // Assert that the document's external version is saved
+    OutgoingMessage<Book> message = ElasticsearchSource.<Book>typed(
+      indexName,
+      typeName,
+      "{\"match_all\": {}}",
+      new ElasticsearchSourceSettings().withIncludeDocumentVersion(true),
+      client,
+      Book.class)
+      .runWith(Sink.seq(), materializer)
+      .toCompletableFuture().get().get(0);
+
+    assertEquals(externalVersion, message.version().get());
+  }
+
+  //#custom-search-params
+  public static class TestDoc {
+    public String id;
+    public String a;
+    public String b;
+    public String c;
+  //#custom-search-params
+    public TestDoc() {
+    }
+
+    public TestDoc(String id, String a, String b, String c) {
+      this.id = id;
+      this.a = a;
+      this.b = b;
+      this.c = c;
+    }
+  //#custom-search-params
+  }
+  //#custom-search-params
+
+  @Test
+  public void testUsingSearchParams() throws Exception {
+
+    String indexName = "test_using_search_params_versions_java";
+    String typeName = "TestDoc";
+
+    List<TestDoc> docs = Arrays.asList(
+            new TestDoc("1", "a1", "b1", "c1"),
+            new TestDoc("2", "a2", "b2", "c2"),
+            new TestDoc("3", "a3", "b3", "c3")
+    );
+
+    // Insert document
+    Source.from(docs)
+            .map( (TestDoc d) -> IncomingMessage.create(d.id, d))
+            .via(ElasticsearchFlow.create(
+                    indexName,
+                    typeName,
+                    new ElasticsearchSinkSettings().withBufferSize(5).withMaxRetry(0),
+                    client,
+                    new ObjectMapper()))
+            .runWith(Sink.seq(), materializer).toCompletableFuture().get();
+
+    flush(indexName);
+
+    //#custom-search-params
+    // Search for docs and ask elastic to only return some fields
+
+    Map<String, String> searchParams = new HashMap<>();
+    searchParams.put("query", "{\"match_all\": {}}");
+    searchParams.put("_source", "[\"id\", \"a\", \"c\"]");
+
+
+    List<TestDoc> result = ElasticsearchSource.<TestDoc>typed(
+            indexName,
+            typeName,
+            searchParams, // <-- Using searchParams
+            new ElasticsearchSourceSettings(),
+            client,
+            TestDoc.class,
+            new ObjectMapper())
+            .map(o -> {
+              return o.source(); // These documents will only have property id, a and c (not b)
+            })
+            .runWith(Sink.seq(), materializer)
+            .toCompletableFuture().get();
+    //#custom-search-params
+    flush(indexName);
+
+    assertEquals(docs.size(), result
+            .stream()
+            .filter( d -> {
+              return d.a != null && d.b == null;
+            }).collect(Collectors.toList())
+            .size());
+
 
   }
 

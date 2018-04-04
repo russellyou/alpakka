@@ -53,14 +53,25 @@ object IncomingMessage {
     IncomingMessage(Option(id), source, passThrough, Option(version))
 
   // Java-api - with passThrough
+  def create[T, C](id: String, source: T, passThrough: C, version: Long, indexName: String): IncomingMessage[T, C] =
+    IncomingMessage(Option(id), source, passThrough, Option(version), Option(indexName))
+
+  // Java-api - with passThrough
   def create[T, C](source: T, passThrough: C): IncomingMessage[T, C] =
     IncomingMessage(None, source, passThrough)
 }
 
-final case class IncomingMessage[T, C](id: Option[String], source: T, passThrough: C, version: Option[Long] = None) {
+final case class IncomingMessage[T, C](id: Option[String],
+                                       source: T,
+                                       passThrough: C,
+                                       version: Option[Long] = None,
+                                       indexName: Option[String] = None) {
 
   def withVersion(version: Long): IncomingMessage[T, C] =
     this.copy(version = Option(version))
+
+  def withIndexName(indexName: String) =
+    this.copy(indexName = Option(indexName))
 }
 
 object IncomingMessageResult {
@@ -88,7 +99,7 @@ class ElasticsearchFlowStage[T, C](
   override val shape = FlowShape(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
-    new TimerGraphStageLogic(shape) with InHandler with OutHandler {
+    new TimerGraphStageLogic(shape) with InHandler with OutHandler with StageLogging {
 
       private var state: State = Idle
       private val queue = new mutable.Queue[IncomingMessage[T, C]]()
@@ -114,9 +125,13 @@ class ElasticsearchFlowStage[T, C](
       private def handleFailure(args: (Seq[IncomingMessage[T, C]], Throwable)): Unit = {
         val (messages, exception) = args
         if (retryCount >= settings.maxRetry) {
+          log.warning(s"Received error from elastic. Giving up after $retryCount tries. Error: ${exception.toString}")
           failStage(exception)
         } else {
           retryCount = retryCount + 1
+          log.warning(
+            s"Received error from elastic. (re)tryCount: $retryCount maxTries: ${settings.maxRetry}. Error: ${exception.toString}"
+          )
           failedMessages = messages
           scheduleOnce(NotUsed, settings.retryInterval.millis)
         }
@@ -196,13 +211,18 @@ class ElasticsearchFlowStage[T, C](
       private def sendBulkUpdateRequest(messages: Seq[IncomingMessage[T, C]]): Unit = {
         val json = messages
           .map { message =>
+            val indexNameToUse: String = message.indexName.getOrElse(indexName)
+
             JsObject(
               insertKeyword -> JsObject(
                 Seq(
-                  Option("_index" -> JsString(indexName)),
+                  Option("_index" -> JsString(indexNameToUse)),
                   Option("_type" -> JsString(typeName)),
                   message.version.map { version =>
                     "_version" -> JsNumber(version)
+                  },
+                  settings.versionType.map { versionType =>
+                    "version_type" -> JsString(versionType)
                   },
                   message.id.map { id =>
                     "_id" -> JsString(id)

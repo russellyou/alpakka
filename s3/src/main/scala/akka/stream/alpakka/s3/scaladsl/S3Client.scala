@@ -30,18 +30,20 @@ object MultipartUploadResult {
     new MultipartUploadResult(r.location, r.bucket, r.key, r.etag)
 }
 
+/**
+ * @param bucketName The name of the bucket in which this object is stored
+ * @param key The key under which this object is stored
+ * @param eTag Hex encoded MD5 hash of this object's contents, as computed by Amazon S3
+ * @param size The size of this object, in bytes
+ * @param lastModified The date, according to Amazon S3, when this object was last modified
+ * @param storageClass The class of storage used by Amazon S3 to store this object
+ */
 final case class ListBucketResultContents(
-    /** The name of the bucket in which this object is stored */
     bucketName: String,
-    /** The key under which this object is stored */
     key: String,
-    /** Hex encoded MD5 hash of this object's contents, as computed by Amazon S3 */
     eTag: String,
-    /** The size of this object, in bytes */
     size: Long,
-    /** The date, according to Amazon S3, when this object was last modified */
     lastModified: Instant,
-    /** The class of storage used by Amazon S3 to store this object */
     storageClass: String
 )
 
@@ -126,7 +128,7 @@ final class ObjectMetadata private (
    * @see ObjectMetadata#setContentType(String)
    */
   lazy val contentType: Option[String] = metadata.collectFirst {
-    case ct: ContentType => ct.value
+    case h if h.lowercaseName() == "content-type" => h.value
   }
 
   /**
@@ -153,8 +155,7 @@ object S3Client {
     new S3Client(S3Settings(system.settings.config))
 
   @deprecated("use apply(AWSCredentialsProvider, String) factory", "0.11")
-  def apply(credentials: OldAWSCredentials, region: String)(implicit system: ActorSystem,
-                                                            mat: Materializer): S3Client =
+  def apply(credentials: OldAWSCredentials, region: String)(implicit system: ActorSystem, mat: Materializer): S3Client =
     apply(
       new AWSStaticCredentialsProvider(credentials.toAmazonCredentials()),
       region
@@ -191,9 +192,9 @@ final class S3Client(val s3Settings: S3Settings)(implicit system: ActorSystem, m
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param method the [[HttpMethod]] to use when making the request
+   * @param method the [[akka.http.scaladsl.model.HttpMethod HttpMethod]] to use when making the request
    * @param s3Headers any headers you want to add
-   * @return a [[Future]] containing the raw [[HttpResponse]]
+   * @return a [[scala.concurrent.Future Future]] containing the raw [[akka.http.scaladsl.model.HttpResponse HttpResponse]]
    */
   def request(bucket: String,
               key: String,
@@ -207,7 +208,7 @@ final class S3Client(val s3Settings: S3Settings)(implicit system: ActorSystem, m
    * @param bucket the s3 bucket name
    * @param key the s3 object key
    * @param sse the server side encryption to use
-   * @return A [[Future]] containing an [[Option]] that will be [[None]] in case the object does not exist
+   * @return A [[scala.concurrent.Future Future]] containing an [[scala.Option]] that will be [[scala.None]] in case the object does not exist
    */
   def getObjectMetadata(bucket: String,
                         key: String,
@@ -219,7 +220,7 @@ final class S3Client(val s3Settings: S3Settings)(implicit system: ActorSystem, m
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @return A [[Future]] of [[Done]]
+   * @return A [[scala.concurrent.Future Future]] of [[akka.Done]]
    */
   def deleteObject(bucket: String, key: String): Future[Done] =
     impl.deleteObject(S3Location(bucket, key))
@@ -234,7 +235,7 @@ final class S3Client(val s3Settings: S3Settings)(implicit system: ActorSystem, m
    * @param contentType an optional [[ContentType]]
    * @param s3Headers any headers you want to add
    * @param sse the server side encryption to use
-   * @return a [[Future]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @return a [[scala.concurrent.Future Future]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -250,9 +251,9 @@ final class S3Client(val s3Settings: S3Settings)(implicit system: ActorSystem, m
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param range [optional] the [[ByteRange]] you want to download
+   * @param range [optional] the [[akka.http.scaladsl.model.headers.ByteRange ByteRange]] you want to download
    * @param sse [optional] the server side encryption used on upload
-   * @return A [[Source]] of [[ByteString]], and a [[Future]] containing the [[ObjectMetadata]]
+   * @return A [[akka.stream.scaladsl.Source Source]] of [[akka.util.ByteString ByteString]] and a [[scala.concurrent.Future Future]] containing the [[ObjectMetadata]]
    */
   def download(bucket: String,
                key: String,
@@ -261,12 +262,17 @@ final class S3Client(val s3Settings: S3Settings)(implicit system: ActorSystem, m
     impl.download(S3Location(bucket, key), range, sse)
 
   /**
-   * Will return a source of object metadata for a given bucket with optional prefix.
+   * Will return a source of object metadata for a given bucket with optional prefix using version 2 of the List Bucket API.
    * This will automatically page through all keys with the given parameters.
+   *
+   * The `akka.stream.alpakka.s3.list-bucket-api-version` can be set to 1 to use the older API version 1
+   *
+   * @see https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html  (version 1 API)
+   * @see https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGET.html (version 1 API)
    *
    * @param bucket Which bucket that you list object metadata for
    * @param prefix Prefix of the keys you want to list under passed bucket
-   * @return [[Source]] of [[ListBucketResultContents]]
+   * @return [[akka.stream.scaladsl.Source Source]] of [[ListBucketResultContents]]
    */
   def listBucket(bucket: String, prefix: Option[String]): Source[ListBucketResultContents, NotUsed] =
     impl.listBucket(bucket, prefix)
@@ -276,12 +282,12 @@ final class S3Client(val s3Settings: S3Settings)(implicit system: ActorSystem, m
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.scaladsl.model.ContentType ContentType]]
    * @param metaHeaders any meta-headers you want to add
    * @param cannedAcl a [[CannedAcl]], defauts to [[CannedAcl.Private]]
    * @param chunkSize the size of the requests sent to S3, minimum [[MinChunkSize]]
    * @param chunkingParallelism the number of parallel requests used for the upload, defaults to 4
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[Future]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.scaladsl.Sink Sink]] that accepts [[ByteString]]'s and materializes to a [[scala.concurrent.Future Future]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -307,11 +313,11 @@ final class S3Client(val s3Settings: S3Settings)(implicit system: ActorSystem, m
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.scaladsl.model.ContentType ContentType]]
    * @param chunkSize the size of the requests sent to S3, minimum [[MinChunkSize]]
    * @param chunkingParallelism the number of parallel requests used for the upload, defaults to 4
    * @param s3Headers any headers you want to add
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[Future]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.scaladsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[scala.concurrent.Future Future]] of [[MultipartUploadResult]]
    */
   def multipartUploadWithHeaders(
       bucket: String,

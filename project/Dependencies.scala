@@ -5,11 +5,11 @@ object Dependencies {
 
   val AkkaVersion = sys.env.get("AKKA_SERIES") match {
     case Some("2.4") => sys.error("Akka 2.4 is not supported anymore")
-    case _ => "2.5.8"
+    case _ => "2.5.11"
   }
 
   val AwsSdkVersion = "1.11.226"
-  val AkkaHttpVersion = "10.0.11"
+  val AkkaHttpVersion = "10.0.13"
 
   val Common = Seq(
     // These libraries are added to all modules via the `Common` AutoPlugin
@@ -18,7 +18,7 @@ object Dependencies {
       "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test,
       "com.typesafe.akka" %% "akka-slf4j" % AkkaVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.3" % Test, // Eclipse Public License 1.0
-      "org.scalatest" %% "scalatest" % "3.0.4" % Test, // ApacheV2
+      "org.scalatest" %% "scalatest" % "3.0.5" % Test, // ApacheV2
       "com.novocode" % "junit-interface" % "0.11" % Test, // BSD-style
       "junit" % "junit" % "4.12" % Test // Eclipse Public License 1.0
     )
@@ -67,7 +67,11 @@ object Dependencies {
       // https://github.com/javaee/javax.jms
       "javax.jms" % "jms" % "1.1", // CDDL Version 1.1
       // http://activemq.apache.org/download.html
-      "org.apache.activemq" % "activemq-all" % "5.14.4" // ApacheV2
+      "org.apache.activemq" % "activemq-all" % "5.14.4", // ApacheV2
+      "com.h2database" % "h2" % "1.4.196", // Eclipse Public License 1.0
+      "org.elasticsearch.client" % "elasticsearch-rest-client" % "6.2.2", // ApacheV2
+      "org.codelibs" % "elasticsearch-cluster-runner" % "6.2.2.0", // ApacheV2
+      "io.netty" % "netty-all" % "4.1.16.Final" // ApacheV2
     )
   )
 
@@ -82,7 +86,7 @@ object Dependencies {
     libraryDependencies ++= Seq(
       "org.elasticsearch.client" % "rest" % "5.5.3", // ApacheV2
       "io.spray" %% "spray-json" % "1.3.3", // ApacheV2
-      "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.1", // ApacheV2
+      "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.4", // ApacheV2
       "org.codelibs" % "elasticsearch-cluster-runner" % "5.6.0.0" % Test // ApacheV2
     )
   )
@@ -96,7 +100,7 @@ object Dependencies {
   val Ftp = Seq(
     libraryDependencies ++= Seq(
       "commons-net" % "commons-net" % "3.6", // ApacheV2
-      "com.hierynomus" % "sshj" % "0.21.1", // ApacheV2
+      "com.hierynomus" % "sshj" % "0.23.0", // ApacheV2
       "org.apache.ftpserver" % "ftpserver-core" % "1.1.1" % Test, // ApacheV2
       "org.apache.sshd" % "sshd-core" % "1.6.0" % Test, // ApacheV2
       "net.i2p.crypto" % "eddsa" % "0.2.0" % Test, // CC0 1.0 Universal
@@ -105,7 +109,7 @@ object Dependencies {
   )
 
   val Geode = {
-    val geodeVersion = "1.3.0"
+    val geodeVersion = "1.4.0"
     val slf4jVersion = "1.7.25"
     Seq(
       libraryDependencies ++=
@@ -124,6 +128,15 @@ object Dependencies {
       "com.typesafe.akka" %% "akka-http-spray-json" % AkkaHttpVersion,
       "org.mockito" % "mockito-core" % "2.3.7" % Test, // MIT
       "com.github.tomakehurst" % "wiremock" % "2.5.1" % Test // ApacheV2
+    )
+  )
+
+  val GoogleFcm = Seq(
+    libraryDependencies ++= Seq(
+      "com.typesafe.akka" %% "akka-http" % AkkaHttpVersion,
+      "com.typesafe.akka" %% "akka-http-spray-json" % AkkaHttpVersion,
+      "com.pauldijou" %% "jwt-core" % "0.14.1", //ApacheV2
+      "org.mockito" % "mockito-core" % "2.7.22" % Test //ApacheV2
     )
   )
 
@@ -165,13 +178,20 @@ object Dependencies {
   )
   val MongoDb = Seq(
     libraryDependencies ++= Seq(
-      "org.mongodb.scala" %% "mongo-scala-driver" % "2.1.0" // ApacheV2
+      "org.mongodb.scala" %% "mongo-scala-driver" % "2.2.1" // ApacheV2
     )
   )
 
   val Mqtt = Seq(
     libraryDependencies ++= Seq(
       "org.eclipse.paho" % "org.eclipse.paho.client.mqttv3" % "1.2.0" // Eclipse Public License 1.0
+    )
+  )
+
+  val OrientDB = Seq(
+    libraryDependencies ++= Seq(
+      "com.orientechnologies" % "orientdb-graphdb" % "2.2.30", // ApacheV2
+      "com.orientechnologies" % "orientdb-object" % "2.2.30" // ApacheV2
     )
   )
 
@@ -217,6 +237,20 @@ object Dependencies {
       "org.mockito" % "mockito-core" % "2.12.0" % Test // MIT
     )
   )
+
+  val Solr = {
+    val solrjVersion = "7.2.0"
+    val slf4jVersion = "1.7.25"
+    Seq(
+      libraryDependencies ++= Seq(
+        "org.apache.solr" % "solr-solrj" % solrjVersion, // ApacheV2
+        //Test
+        "org.apache.solr" % "solr-test-framework" % solrjVersion % Test, // ApacheV2
+        "org.slf4j" % "slf4j-log4j12" % slf4jVersion % Test // MIT like: http://www.slf4j.org/license.html
+      ),
+      resolvers += ("restlet" at "https://maven.restlet.com")
+    )
+  }
 
   val Sqs = Seq(
     libraryDependencies ++= Seq(

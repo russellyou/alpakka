@@ -11,7 +11,6 @@ import java.util.concurrent.CompletionStage
 import scala.compat.java8.FutureConverters._
 import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
-import akka.http.impl.model.JavaUri
 import akka.http.javadsl.model.headers.ByteRange
 import akka.http.javadsl.model._
 import akka.http.scaladsl.model.headers.{ByteRange => ScalaByteRange}
@@ -34,18 +33,20 @@ import scala.concurrent.Future
 
 final case class MultipartUploadResult(location: Uri, bucket: String, key: String, etag: String)
 
+/**
+ * @param bucketName The name of the bucket in which this object is stored
+ * @param key The key under which this object is stored
+ * @param eTag Hex encoded MD5 hash of this object's contents, as computed by Amazon S3
+ * @param size The size of this object, in bytes
+ * @param lastModified The date, according to Amazon S3, when this object was last modified
+ * @param storageClass The class of storage used by Amazon S3 to store this object
+ */
 final case class ListBucketResultContents(
-    /** The name of the bucket in which this object is stored */
     bucketName: String,
-    /** The key under which this object is stored */
     key: String,
-    /** Hex encoded MD5 hash of this object's contents, as computed by Amazon S3 */
     eTag: String,
-    /** The size of this object, in bytes */
     size: Long,
-    /** The date, according to Amazon S3, when this object was last modified */
     lastModified: Instant,
-    /** The class of storage used by Amazon S3 to store this object */
     storageClass: String
 )
 
@@ -142,7 +143,7 @@ final class ObjectMetadata private[javadsl] (
 
 object MultipartUploadResult {
   def create(r: CompleteMultipartUploadResult): MultipartUploadResult =
-    new MultipartUploadResult(JavaUri(r.location), r.bucket, r.key, r.etag)
+    new MultipartUploadResult(Uri.create(r.location), r.bucket, r.key, r.etag)
 }
 
 object S3Client {
@@ -188,9 +189,9 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param method the [[HttpMethod]] to use when making the request
+   * @param method the [[akka.http.javadsl.model.HttpMethod HttpMethod]] to use when making the request
    * @param s3Headers any headers you want to add
-   * @return a [[java.util.concurrent.CompletionStage]] containing the raw [[HttpResponse]]
+   * @return a [[java.util.concurrent.CompletionStage CompletionStage]] containing the raw [[HttpResponse]]
    */
   def request(bucket: String,
               key: String,
@@ -206,7 +207,7 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @return A [[java.util.concurrent.CompletionStage]] containing an [[Optional]] that will be empty in case the object does not exist
+   * @return A [[java.util.concurrent.CompletionStage CompletionStage]] containing an [[java.util.Optional Optional]] that will be empty in case the object does not exist
    */
   def getObjectMetadata(bucket: String, key: String): CompletionStage[Optional[ObjectMetadata]] =
     impl
@@ -222,7 +223,7 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    * @param bucket the s3 bucket name
    * @param key the s3 object key
    * @param sse the server side encryption to use
-   * @return A [[java.util.concurrent.CompletionStage]] containing an [[Optional]] that will be empty in case the object does not exist
+   * @return A [[java.util.concurrent.CompletionStage CompletionStage]] containing an [[java.util.Optional Optional]] that will be empty in case the object does not exist
    */
   def getObjectMetadata(bucket: String,
                         key: String,
@@ -239,7 +240,7 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @return A [[java.util.concurrent.CompletionStage]] of [[Void]]
+   * @return A [[java.util.concurrent.CompletionStage CompletionStage]] of [[java.lang.Void]]
    */
   def deleteObject(bucket: String, key: String): CompletionStage[Done] =
     impl.deleteObject(S3Location(bucket, key)).map(_ => Done.getInstance())(mat.executionContext).toJava
@@ -249,10 +250,10 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param data a [[Stream]] of [[ByteString]]
+   * @param data a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]]
    * @param contentLength the number of bytes that will be uploaded (required!)
-   * @param contentType an optional [[ContentType]]
-   * @return a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
+   * @return a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -275,11 +276,11 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param data a [[Stream]] of [[ByteString]]
+   * @param data a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]]
    * @param contentLength the number of bytes that will be uploaded (required!)
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param sse the server side encryption to use
-   * @return a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @return a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -303,12 +304,12 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param data a [[Stream]] of [[ByteString]]
+   * @param data a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]]
    * @param contentLength the number of bytes that will be uploaded (required!)
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param cannedAcl the Acl
    * @param metaHeaders the metadata headers
-   * @return ta [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @return ta [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -324,13 +325,13 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param data a [[Stream]] of [[ByteString]]
+   * @param data a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]]
    * @param contentLength the number of bytes that will be uploaded (required!)
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param cannedAcl the Acl
    * @param metaHeaders the metadata headers
    * @param sse the server side encryption to use
-   * @return a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @return a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -347,10 +348,10 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param data a [[Stream]] of [[ByteString]]
+   * @param data a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]]
    * @param contentLength the number of bytes that will be uploaded (required!)
-   * @param contentType an optional [[ContentType]]
-   * @return a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
+   * @return a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -364,11 +365,11 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param data a [[Stream]] of [[ByteString]]
+   * @param data a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]]
    * @param contentLength the number of bytes that will be uploaded (required!)
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param sse the server side encryption to use
-   * @return a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @return a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -383,9 +384,9 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param data a [[Stream]] of [[ByteString]]
+   * @param data a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]]
    * @param contentLength the number of bytes that will be uploaded (required!)
-   * @return a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @return a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -404,10 +405,10 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param data a [[Stream]] of [[ByteString]]
+   * @param data a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]]
    * @param contentLength the number of bytes that will be uploaded (required!)
    * @param sse the server side encryption to use
-   * @return a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
+   * @return a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]] of the uploaded S3 Object
    */
   def putObject(bucket: String,
                 key: String,
@@ -435,7 +436,7 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @return A [[akka.japi.Pair]] with a [[akka.stream.javadsl.Source]] of [[ByteString]], and a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]]
+   * @return A [[akka.japi.Pair]] with a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]], and a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]]
    */
   def download(bucket: String, key: String): JPair[Source[ByteString, NotUsed], CompletionStage[ObjectMetadata]] =
     toJava(impl.download(S3Location(bucket, key), None, None))
@@ -446,7 +447,7 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    * @param bucket the s3 bucket name
    * @param key the s3 object key
    * @param sse the server side encryption to use
-   * @return A [[akka.japi.Pair]] with a [[akka.stream.javadsl.Source]] of [[ByteString]], and a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]]
+   * @return A [[akka.japi.Pair]] with a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]], and a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]]
    */
   def download(bucket: String,
                key: String,
@@ -458,8 +459,8 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param range the [[ByteRange]] you want to download
-   * @return A [[akka.japi.Pair]] with a [[akka.stream.javadsl.Source]] of [[ByteString]], and a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]]
+   * @param range the [[akka.http.javadsl.model.headers.ByteRange ByteRange]] you want to download
+   * @return A [[akka.japi.Pair]] with a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]], and a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]]
    */
   def download(bucket: String,
                key: String,
@@ -473,9 +474,9 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param range the [[ByteRange]] you want to download
+   * @param range the [[akka.http.javadsl.model.headers.ByteRange ByteRange]] you want to download
    * @param sse the server side encryption to use
-   * @return A [[akka.japi.Pair]] with a [[akka.stream.javadsl.Source]] of [[ByteString]], and a [[java.util.concurrent.CompletionStage]] containing the [[ObjectMetadata]]
+   * @return A [[akka.japi.Pair]] with a [[akka.stream.javadsl.Source Source]] of [[akka.util.ByteString ByteString]], and a [[java.util.concurrent.CompletionStage CompletionStage]] containing the [[ObjectMetadata]]
    */
   def download(bucket: String,
                key: String,
@@ -486,8 +487,14 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
   }
 
   /**
-   * Will return a source of object metadata for a given bucket with optional prefix.
+   * Will return a source of object metadata for a given bucket with optional prefix using version 2 of the List Bucket API.
    * This will automatically page through all keys with the given parameters.
+   *
+   * The <code>akka.stream.alpakka.s3.list-bucket-api-version</code> can be set to 1 to use the older API version 1
+   *
+   * @see https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html  (version 1 API)
+   * @see https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGET.html (version 1 API)
+   *
    * @param bucket Which bucket that you list object metadata for
    * @param prefix Prefix of the keys you want to list under passed bucket
    * @return Source of object metadata
@@ -505,9 +512,9 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param s3Headers any headers you want to add
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -523,10 +530,10 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param s3Headers any headers you want to add
    * @param sse the server side encryption to use
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -543,10 +550,10 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param metaHeaders any meta-headers you want to add
    * @param cannedAcl a [[CannedAcl]], defauts to [[CannedAcl.Private]]
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -560,11 +567,11 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param metaHeaders any meta-headers you want to add
    * @param cannedAcl a [[CannedAcl]], defauts to [[CannedAcl.Private]]
    * @param sse sse the server side encryption to use
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -579,9 +586,9 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param cannedAcl a [[CannedAcl]], defauts to [[CannedAcl.Private]]
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -594,10 +601,10 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param cannedAcl a [[CannedAcl]], defauts to [[CannedAcl.Private]]
    * @param sse the server side encryption to use
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -611,8 +618,8 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -624,9 +631,9 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @param contentType an optional [[ContentType]]
+   * @param contentType an optional [[akka.http.javadsl.model.ContentType ContentType]]
    * @param sse the server side encryption to use
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,
@@ -639,7 +646,7 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    *
    * @param bucket the s3 bucket name
    * @param key the s3 object key
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String, key: String): Sink[ByteString, CompletionStage[MultipartUploadResult]] =
     multipartUpload(bucket, key, ContentTypes.APPLICATION_OCTET_STREAM, CannedAcl.Private, MetaHeaders(Map()))
@@ -650,7 +657,7 @@ final class S3Client(s3Settings: S3Settings, system: ActorSystem, mat: Materiali
    * @param bucket the s3 bucket name
    * @param key the s3 object key
    * @param sse the server side encryption to use
-   * @return a [[Sink]] that accepts [[ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage]] of [[MultipartUploadResult]]
+   * @return a [[akka.stream.javadsl.Sink Sink]] that accepts [[akka.util.ByteString ByteString]]'s and materializes to a [[java.util.concurrent.CompletionStage CompletionStage]] of [[MultipartUploadResult]]
    */
   def multipartUpload(bucket: String,
                       key: String,

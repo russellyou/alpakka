@@ -21,11 +21,13 @@ import org.eclipse.paho.client.mqttv3.{
   MqttAsyncClient,
   MqttCallbackExtended,
   MqttConnectOptions,
+  MqttException,
   MqttMessage => PahoMqttMessage
 }
 
 import scala.collection.mutable
 import scala.concurrent.{Future, Promise}
+import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
 
 final class MqttFlowStage(sourceSettings: MqttSourceSettings,
@@ -45,6 +47,7 @@ final class MqttFlowStage(sourceSettings: MqttSourceSettings,
 
     (new GraphStageLogic(shape) {
       private val backpressure = new Semaphore(bufferSize)
+      private var pendingMsg = Option.empty[MqttMessage]
       private val queue = mutable.Queue[MqttCommittableMessage]()
       private val unackedMessages = new AtomicInteger()
 
@@ -58,20 +61,16 @@ final class MqttFlowStage(sourceSettings: MqttSourceSettings,
       private def onConnect =
         getAsyncCallback[IMqttAsyncClient]((client: IMqttAsyncClient) => {
           if (manualAcks) client.setManualAcks(true)
-          val (topics, qos) = sourceSettings.subscriptions.unzip
+          val (topics, qoses) = sourceSettings.subscriptions.unzip
           if (topics.nonEmpty) {
-            client.subscribe(topics.toArray, qos.map(_.byteValue.toInt).toArray, (), mqttSubscriptionCallback)
+            client.subscribe(topics.toArray, qoses.map(_.byteValue.toInt).toArray, (), mqttSubscriptionCallback)
           } else {
             subscriptionPromise.complete(Success(Done))
             pull(in)
           }
         })
 
-      private def onConnectionLost =
-        getAsyncCallback[Throwable]((ex: Throwable) => {
-          failStage(ex)
-          subscriptionPromise.tryFailure(ex)
-        })
+      private def onConnectionLost = getAsyncCallback[Throwable](onFailure)
 
       private def onMessage(message: MqttCommittableMessage): Unit = {
         backpressure.acquire()
@@ -82,15 +81,15 @@ final class MqttFlowStage(sourceSettings: MqttSourceSettings,
         if (isAvailable(out)) {
           pushMessage(message)
         } else if (queue.size + 1 > bufferSize) {
-          failStage(new RuntimeException(s"Reached maximum buffer size $bufferSize"))
+          onFailure(new RuntimeException(s"Reached maximum buffer size $bufferSize"))
         } else {
           queue.enqueue(message)
         }
       }
 
       private val onPublished = getAsyncCallback[Try[IMqttToken]] {
-        case Success(_) => pull(in)
-        case Failure(ex) => failStage(ex)
+        case Success(_) => if (!hasBeenPulled(in)) pull(in)
+        case Failure(ex) => onFailure(ex)
       }
 
       private def commitCallback =
@@ -113,8 +112,15 @@ final class MqttFlowStage(sourceSettings: MqttSourceSettings,
         connectionSettings.persistence
       )
 
+      private def publishMsg(msg: MqttMessage) = {
+        val pahoMsg = new PahoMqttMessage(msg.payload.toArray)
+        pahoMsg.setQos(msg.qos.getOrElse(qos).byteValue)
+        pahoMsg.setRetained(msg.retained)
+        mqttClient.publish(msg.topic, pahoMsg, msg, onPublished.invoke _)
+      }
+
       mqttClient.setCallback(new MqttCallbackExtended {
-        override def messageArrived(topic: String, pahoMessage: PahoMqttMessage) =
+        override def messageArrived(topic: String, pahoMessage: PahoMqttMessage): Unit =
           onMessage(new MqttCommittableMessage {
             override val message = MqttMessage(topic, ByteString(pahoMessage.getPayload))
             override def messageArrivedComplete(): Future[Done] = {
@@ -129,15 +135,21 @@ final class MqttFlowStage(sourceSettings: MqttSourceSettings,
             }
           })
 
-        override def deliveryComplete(token: IMqttDeliveryToken) = ()
+        override def deliveryComplete(token: IMqttDeliveryToken): Unit = ()
 
-        override def connectionLost(cause: Throwable) =
-          onConnectionLost.invoke(cause)
+        override def connectionLost(cause: Throwable): Unit =
+          if (!connectOptions.isAutomaticReconnect) onConnectionLost.invoke(cause)
 
-        override def connectComplete(reconnect: Boolean, serverURI: String) = if (reconnect) pull(in)
+        override def connectComplete(reconnect: Boolean, serverURI: String): Unit = {
+          pendingMsg.foreach { msg =>
+            publishMsg(msg)
+            pendingMsg = None
+          }
+          if (reconnect && !hasBeenPulled(in)) pull(in)
+        }
       })
 
-      val connectOptions = {
+      val connectOptions: MqttConnectOptions = {
         val options = new MqttConnectOptions
         connectionSettings.auth.foreach {
           case (user, password) =>
@@ -180,10 +192,12 @@ final class MqttFlowStage(sourceSettings: MqttSourceSettings,
         new InHandler {
           override def onPush(): Unit = {
             val msg = grab(in)
-            val pahoMsg = new PahoMqttMessage(msg.payload.toArray)
-            pahoMsg.setQos(msg.qos.getOrElse(qos).byteValue)
-            pahoMsg.setRetained(msg.retained)
-            mqttClient.publish(msg.topic, pahoMsg, msg, onPublished.invoke _)
+            try {
+              publishMsg(msg)
+            } catch {
+              case _: MqttException if connectOptions.isAutomaticReconnect => pendingMsg = Some(msg)
+              case NonFatal(e) => throw e
+            }
           }
 
           override def onUpstreamFinish(): Unit = {
@@ -220,16 +234,25 @@ final class MqttFlowStage(sourceSettings: MqttSourceSettings,
         if (manualAcks) unackedMessages.incrementAndGet()
       }
 
+      private def onFailure(ex: Throwable): Unit = {
+        subscriptionPromise.tryFailure(ex)
+        failStage(ex)
+      }
+
       override def preStart(): Unit =
-        mqttClient.connect(
-          connectOptions,
-          (),
-          (token: Try[IMqttToken]) =>
-            token match {
-              case Success(token) => onConnect.invoke(token.getClient)
-              case Failure(ex) => onConnectionLost.invoke(ex)
-          }
-        )
+        try {
+          mqttClient.connect(
+            connectOptions,
+            (),
+            (token: Try[IMqttToken]) =>
+              token match {
+                case Success(v) => onConnect.invoke(v.getClient)
+                case Failure(ex) => onConnectionLost.invoke(ex)
+            }
+          )
+        } catch {
+          case e: Throwable => onFailure(e)
+        }
 
       override def postStop(): Unit = {
         if (!subscriptionPromise.isCompleted)
@@ -238,20 +261,30 @@ final class MqttFlowStage(sourceSettings: MqttSourceSettings,
               new IllegalStateException("Cannot complete subscription because the stage is about to stop or fail")
             )
 
-        mqttClient.disconnect(
-          connectionSettings.disconnectQuiesceTimeout.toMillis,
-          null,
-          new IMqttActionListener {
-            override def onSuccess(asyncActionToken: IMqttToken): Unit = mqttClient.close()
+        try {
+          mqttClient.disconnect(
+            connectionSettings.disconnectQuiesceTimeout.toMillis,
+            null,
+            new IMqttActionListener {
+              override def onSuccess(asyncActionToken: IMqttToken): Unit = mqttClient.close()
 
-            override def onFailure(asyncActionToken: IMqttToken, exception: Throwable): Unit = {
-              // Use 0 quiesce timeout as we have already quiesced in `disconnect`
-              mqttClient.disconnectForcibly(0, connectionSettings.disconnectTimeout.toMillis)
-              // Only disconnected client can be closed
-              mqttClient.close()
+              override def onFailure(asyncActionToken: IMqttToken, exception: Throwable): Unit = {
+                // Use 0 quiesce timeout as we have already quiesced in `disconnect`
+                mqttClient.disconnectForcibly(0, connectionSettings.disconnectTimeout.toMillis)
+                // Only disconnected client can be closed
+                mqttClient.close()
+              }
             }
-          }
-        )
+          )
+        } catch {
+          // Not to worry - disconnect is best effort - don't worry if already disconnected
+          case _: MqttException =>
+            try {
+              mqttClient.close()
+            } catch {
+              case _: MqttException =>
+            }
+        }
       }
     }, subscriptionPromise.future)
   }

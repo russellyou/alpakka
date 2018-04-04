@@ -42,13 +42,18 @@ The full examples for using the `Source`, `Sink`, and `Flow` (listed further dow
 
 All functionality provided by this connector requires the user to first create an instance of `SlickSession`, which is a thin wrapper around Slick's database connection management and database profile API.
 
+If you are using Slick in your project, you can create a `SlickSession` instance by sharing the database configuration:
+
+Scala
+: @@snip ($alpakka$/slick/src/test/scala/akka/stream/alpakka/slick/scaladsl/SlickSpec.scala) { #init-db-config-session }
+
+Otherwise, you can configure your database using [typesafe-config](https://github.com/typesafehub/config) by adding a named configuration to your application.conf and then referring to that configuration when starting the session:
+
 Scala
 : @@snip ($alpakka$/slick/src/test/scala/akka/stream/alpakka/slick/scaladsl/SlickSpec.scala) { #init-session }
 
 Java
 : @@snip ($alpakka$/slick/src/test/java/akka/stream/alpakka/slick/javadsl/SlickTest.java) { #init-session }
-
-As you can see, this requires you to configure your database using [typesafe-config](https://github.com/typesafehub/config) by adding a named configuration to your application.conf and then referring to that configuration when starting the session.
 
 Here is an example configuration for the H2 database, which is used for the unit tests of the Slick connector itself:
 
@@ -124,12 +129,22 @@ Scala
 Java
 : @@snip ($alpakka$/slick/src/test/java/akka/stream/alpakka/slick/javadsl/DocSnippetSink.java) { #sink-example }
 
-For completeness, the Slick connector also exposes a `Flow` that has the exact same functionality as the `Sink` but it allows you to continue the stream for further processing. The return value of every executed statement, e.g. the element values is an `Int` denoting the number of updated/inserted/deleted rows.
+For completeness, the Slick connector also exposes a `Flow` that has the exact same functionality as the `Sink` but it allows you to continue the stream for further processing. The return value of every executed statement, e.g. the element values is the fixed type `Int` denoting the number of updated/inserted/deleted rows.
 
 Scala
 : @@snip ($alpakka$/slick/src/test/scala/akka/stream/alpakka/slick/scaladsl/DocSnippets.scala) { #flow-example }
 
 Java
 : @@snip ($alpakka$/slick/src/test/java/akka/stream/alpakka/slick/javadsl/DocSnippetFlow.java) { #flow-example }
+
+To have a different return type, use the `flowWithPassThrough` function.
+E.g. when consuming Kafka messages, this allows you to maintain the kafka committable offset so the message can be committed in a next stage in the flow.
+
+Scala
+: @@snip ($alpakka$/slick/src/test/scala/akka/stream/alpakka/slick/scaladsl/DocSnippets.scala) { #flowWithPassThrough-example }
+
+Java
+: @@snip ($alpakka$/slick/src/test/java/akka/stream/alpakka/slick/javadsl/DocSnippetFlowWithPassThrough.java) { #flowWithPassThrough-example }
+
 
  [jdbcbackend-api]: http://slick.lightbend.com/doc/3.2.1/api/index.html#slick.jdbc.JdbcBackend$DatabaseFactoryDef@forConfig(String,Config,Driver,ClassLoader):Database

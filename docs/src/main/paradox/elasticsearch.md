@@ -101,6 +101,7 @@ Java
 | maxRetry            | 100     | `ElasticsearchSink` give up and fails the stage if it gets this number of consective failures.         | 
 | retryPartialFailure | true    | A bulk request might fails partially for some reason. If this parameter is true, then `ElasticsearchSink` retries to request these failed messages. Otherwise, failed messages are discarded (or pushed to downstream if you use `ElasticsearchFlow` instead of the sink). |
 | docAsUpsert         | false   | If this parameter is true, `ElasticsearchSink` uses the upsert method to index documents. By default, documents are added using the standard index method (which create or replace). |
+| versionType         | None    | If set, `ElasticsearchSink` uses the chosen versionType to index documents. See [Version types](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-index_.html#_version_types) for accepted settings. |
 
 ## Elasticsearch as Flow
 
@@ -125,6 +126,24 @@ Scala
 Java
 : @@snip ($alpakka$/elasticsearch/src/test/java/akka/stream/alpakka/elasticsearch/ElasticsearchTest.java) { #kafka-example }
 
+### Specifying custom index-name for every document
+
+When working with index-patterns using wildcards, you might need to specify a custom
+index-name for each document:
+
+Scala
+: @@snip ($alpakka$/elasticsearch/src/test/scala/akka/stream/alpakka/elasticsearch/ElasticsearchSpec.scala) { #custom-index-name-example }
+ 
+### More custom searching
+
+The easiest way of using ElasticSearch-source, is to just specify the query-param. Sometimes you need more control,
+like specifying which fields to return and so on. In such cases you can instead use 'searchParams' instead:
+
+Scala
+: @@snip ($alpakka$/elasticsearch/src/test/scala/akka/stream/alpakka/elasticsearch/ElasticsearchSpec.scala) { #custom-search-params }
+
+Java
+: @@snip ($alpakka$/elasticsearch/src/test/java/akka/stream/alpakka/elasticsearch/ElasticsearchTest.java) { #custom-search-params }
 
 
 ### Running the example code

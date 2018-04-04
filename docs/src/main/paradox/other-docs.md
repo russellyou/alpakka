@@ -1,5 +1,14 @@
 # Other documentation
 
+[Revitalizing Enterprise Integration with Reactive Streams](https://info.lightbend.com/webinar-revitalizing-enterprise-integration-with-reactive-streams-recording.html)
+Webinar by Viktor Klang, Lightbend, March 2018
+
+[Transforming enterprise integration with reactive streams](https://www.oreilly.com/ideas/transforming-enterprise-integration-with-reactive-streams)
+Article by Jonas Bonér and Viktor Klang, March 2018
+
+[From a time-series database to a key operational technology for the enterprise](https://youtu.be/3APiIht6oDY?t=1298)
+Presentation by Colin Breck, Tesla, February 2018
+
 [Build Real-Time Streaming ETL Pipelines with Akka Streams, Alpakka and Apache Kafka](https://www.lightbend.com/blog/build-real-time-streaming-etl-pipelines-with-akka-streams-alpakka-and-apache-kafka)
 Webinar by Konrad Malawski, Lightbend, October 2017
 
